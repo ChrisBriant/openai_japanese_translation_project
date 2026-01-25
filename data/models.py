@@ -91,3 +91,32 @@ class TranslationUsage(Base):
     )
 
  
+class TranslationAudio(Base):
+    __tablename__ = "translation_audio"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    translation_id = Column(
+        Integer,
+        ForeignKey("translations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    # Public S3 / Linode object URL
+    storage_url = Column(String(1024), nullable=False)
+
+    # Optional but useful
+    voice_id = Column(String(100), nullable=True)
+    audio_format = Column(String(20), nullable=False, default="mp3")
+
+    created_at = Column(
+        TIMESTAMP,
+        server_default=func.current_timestamp(),
+        nullable=False,
+    )
+
+    translation = relationship(
+        "Translation",
+        back_populates="audio_files",
+    )
