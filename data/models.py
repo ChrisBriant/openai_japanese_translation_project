@@ -60,6 +60,13 @@ class Translation(Base):
         cascade="all, delete-orphan",
     )
 
+    translation_audio = relationship(
+        "TranslationAudio",
+        back_populates="translation",
+        cascade="all, delete-orphan",
+    )
+
+
 
 class TranslationUsage(Base):
     __tablename__ = "translation_usages"
@@ -118,5 +125,5 @@ class TranslationAudio(Base):
 
     translation = relationship(
         "Translation",
-        back_populates="audio_files",
+        back_populates="translation_audio",
     )

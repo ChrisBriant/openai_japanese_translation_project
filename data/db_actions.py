@@ -2,12 +2,13 @@ from typing import List
 from pydantic import BaseModel
 from sqlalchemy.future import select
 from sqlalchemy.exc import IntegrityError
-from .models import Translation, TranslationUsage
+from .models import Translation, TranslationUsage, TranslationAudio
 from .db import engine
 import asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import sessionmaker, selectinload
 from pathlib import Path
+from datetime import datetime
 import json
 
 class Usage(BaseModel):
@@ -30,6 +31,16 @@ class TranslationResponse(BaseModel):
         orm_mode = True
         from_attributes=True
 
+class TranslationAudioResponse(BaseModel):
+    id: int
+    translation_id: int
+    storage_url: str
+    voice_id: str | None
+    audio_format: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True  # SQLAlchemy compatibility
 
 # async def insert_translation(session: AsyncSession, payload: dict) -> TranslationResponse:
 #     """
@@ -112,8 +123,6 @@ class TranslationResponse(BaseModel):
 #     return TranslationResponse.from_orm(translation)
 
 
-from sqlalchemy.orm import selectinload
-
 async def insert_translation(session: AsyncSession, payload: dict) -> TranslationResponse:
     # Check if exists
     stmt = select(Translation).options(selectinload(Translation.usages)).where(
@@ -152,24 +161,47 @@ async def insert_translation(session: AsyncSession, payload: dict) -> Translatio
     return TranslationResponse.model_validate(translation_with_usages)
 
 
+async def insert_translation_audio(
+    db: AsyncSession,
+    translation_id: int,
+    storage_url: str,
+    voice_id: str | None = None,
+    audio_format: str = "mp3",
+) -> TranslationAudioResponse:
+    audio = TranslationAudio(
+        translation_id=translation_id,
+        storage_url=storage_url,
+        voice_id=voice_id,
+        audio_format=audio_format,
+    )
+
+    db.add(audio)
+    await db.commit()
+    await db.refresh(audio)
+
+    return TranslationAudioResponse.model_validate(audio)
+
+
 async def main():
     # 1️⃣ Read JSON file
     # get project root (parent of current file)
-    BASE_DIR = Path(__file__).resolve().parent.parent
+    # BASE_DIR = Path(__file__).resolve().parent.parent
 
-    filename = BASE_DIR / "output" / "fart_20260123_084755.json"
+    # filename = BASE_DIR / "output" / "fart_20260123_084755.json"
 
-    with open(filename, "r", encoding="utf-8") as f:
-        payload = json.load(f)
+    # with open(filename, "r", encoding="utf-8") as f:
+    #     payload = json.load(f)
 
-    # 2️⃣ Create async session
+    # # 2️⃣ Create async session
     async_session = sessionmaker(
         engine, class_=AsyncSession, expire_on_commit=False
     )
 
     async with async_session() as session:
         # 3️⃣ Insert translation
-        response = await insert_translation(session, payload)
+        #response = await insert_translation(session, payload)
+
+        response = await insert_translation_audio(session,1,"https://japanese-translations.nl-ams-1.linodeobjects.com/japanese-translate/0ead6ffb-80f0-4351-8104-97ed96c46fd0.mp3","EXAVITQu4vr4xnSDxMaL")
 
         # 4️⃣ Print the Pydantic response as JSON
         print(response.json())

@@ -62,3 +62,7 @@ API_SECRET_KEY=your_api_secret
 
 DATABASE_URL=sqlite:///./app.db
 # or postgres://user:password@host:port/dbname
+
+## Voice IDs
+
+- EXAVITQu4vr4xnSDxMaL
