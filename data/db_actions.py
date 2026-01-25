@@ -12,15 +12,16 @@ from datetime import datetime
 import json
 
 class Usage(BaseModel):
+    id: int  # DB primary key
     en: str
     ja: str
 
     class Config:
-        orm_mode = True  # important for SQLAlchemy ORM objects
         from_attributes=True
 
 
 class TranslationResponse(BaseModel):
+    id: int  # DB primary key
     word: str
     translation: str
     reading: str | None
@@ -28,7 +29,6 @@ class TranslationResponse(BaseModel):
     usages: List[Usage] = []
 
     class Config:
-        orm_mode = True
         from_attributes=True
 
 class TranslationAudioResponse(BaseModel):
@@ -123,8 +123,45 @@ class TranslationAudioResponse(BaseModel):
 #     return TranslationResponse.from_orm(translation)
 
 
+# async def insert_translation(session: AsyncSession, payload: dict) -> TranslationResponse:
+#     # Check if exists
+#     stmt = select(Translation).options(selectinload(Translation.usages)).where(
+#         Translation.word == payload["word"],
+#         Translation.translation == payload["translation"],
+#         Translation.reading == payload.get("reading")
+#     )
+#     result = await session.execute(stmt)
+#     existing = result.scalars().first()
+#     if existing:
+#         return TranslationResponse.model_validate(existing)
+
+#     # Create new translation
+#     translation = Translation(
+#         word=payload["word"],
+#         translation=payload["translation"],
+#         reading=payload.get("reading"),
+#         script=payload["script"],
+#         usages=[TranslationUsage(en=u["en"], ja=u["ja"]) for u in payload.get("usage", [])]
+#     )
+
+#     session.add(translation)
+#     try:
+#         await session.commit()
+#     except IntegrityError:
+#         await session.rollback()
+#         raise
+
+#     # Reload with usages eagerly loaded
+#     stmt = select(Translation).options(selectinload(Translation.usages)).where(
+#         Translation.id == translation.id
+#     )
+#     result = await session.execute(stmt)
+#     translation_with_usages = result.scalars().first()
+
+#     return TranslationResponse.model_validate(translation_with_usages)
+
 async def insert_translation(session: AsyncSession, payload: dict) -> TranslationResponse:
-    # Check if exists
+    # Check if translation exists
     stmt = select(Translation).options(selectinload(Translation.usages)).where(
         Translation.word == payload["word"],
         Translation.translation == payload["translation"],
@@ -135,7 +172,7 @@ async def insert_translation(session: AsyncSession, payload: dict) -> Translatio
     if existing:
         return TranslationResponse.model_validate(existing)
 
-    # Create new translation
+    # Create new translation + usages
     translation = Translation(
         word=payload["word"],
         translation=payload["translation"],
@@ -145,13 +182,14 @@ async def insert_translation(session: AsyncSession, payload: dict) -> Translatio
     )
 
     session.add(translation)
+
     try:
         await session.commit()
     except IntegrityError:
         await session.rollback()
         raise
 
-    # Reload with usages eagerly loaded
+    # Reload translation with usages eagerly loaded (for Pydantic)
     stmt = select(Translation).options(selectinload(Translation.usages)).where(
         Translation.id == translation.id
     )
@@ -159,6 +197,7 @@ async def insert_translation(session: AsyncSession, payload: dict) -> Translatio
     translation_with_usages = result.scalars().first()
 
     return TranslationResponse.model_validate(translation_with_usages)
+
 
 
 async def insert_translation_audio(
@@ -185,12 +224,12 @@ async def insert_translation_audio(
 async def main():
     # 1️⃣ Read JSON file
     # get project root (parent of current file)
-    # BASE_DIR = Path(__file__).resolve().parent.parent
+    BASE_DIR = Path(__file__).resolve().parent.parent
 
-    # filename = BASE_DIR / "output" / "fart_20260123_084755.json"
+    filename = BASE_DIR / "output" / "fart_20260123_084755.json"
 
-    # with open(filename, "r", encoding="utf-8") as f:
-    #     payload = json.load(f)
+    with open(filename, "r", encoding="utf-8") as f:
+        payload = json.load(f)
 
     # # 2️⃣ Create async session
     async_session = sessionmaker(
@@ -199,9 +238,9 @@ async def main():
 
     async with async_session() as session:
         # 3️⃣ Insert translation
-        #response = await insert_translation(session, payload)
+        response = await insert_translation(session, payload)
 
-        response = await insert_translation_audio(session,1,"https://japanese-translations.nl-ams-1.linodeobjects.com/japanese-translate/0ead6ffb-80f0-4351-8104-97ed96c46fd0.mp3","EXAVITQu4vr4xnSDxMaL")
+        #response = await insert_translation_audio(session,1,"https://japanese-translations.nl-ams-1.linodeobjects.com/japanese-translate/0ead6ffb-80f0-4351-8104-97ed96c46fd0.mp3","EXAVITQu4vr4xnSDxMaL")
 
         # 4️⃣ Print the Pydantic response as JSON
         print(response.json())

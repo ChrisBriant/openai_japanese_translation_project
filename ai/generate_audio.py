@@ -13,9 +13,9 @@ if os.path.isfile(dotenv_file):
 ELEVEN_LABS_API_KEY = os.environ.get("ELEVEN_LABS_KEY")
 
 
-async def get_audio_from_eleven_labs(jap_text, output_path):
+async def get_audio_from_eleven_labs(jap_text, output_path, voice_id):
 
-    url = "https://api.elevenlabs.io/v1/text-to-speech/EXAVITQu4vr4xnSDxMaL"
+    url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
 
     payload = {
         "text": jap_text,
@@ -41,6 +41,7 @@ async def get_audio_from_eleven_labs(jap_text, output_path):
     # Write audio bytes to file
     with open(output_path, "wb") as f:
         f.write(response.content)
+    return output_path
 
 
 async def main(filename: str):
@@ -64,7 +65,8 @@ async def main(filename: str):
 
     # do something with payload
     print(payload["translation"], audio_path)
-    await get_audio_from_eleven_labs(payload["translation"],audio_path)
+    saved_file_location = await get_audio_from_eleven_labs(payload["translation"],audio_path,"EXAVITQu4vr4xnSDxMaL")
+    print("OUT: ",saved_file_location)
 
 
 

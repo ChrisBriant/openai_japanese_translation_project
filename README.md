@@ -63,6 +63,17 @@ API_SECRET_KEY=your_api_secret
 DATABASE_URL=sqlite:///./app.db
 # or postgres://user:password@host:port/dbname
 
+'''
+
 ## Voice IDs
 
 - EXAVITQu4vr4xnSDxMaL
+
+## Run app server
+
+uvicorn main:app --reload
+
+
+## Run app dev
+
+uvicorn main:app --host 0.0.0.0 --port 8000 --reload
