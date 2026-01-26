@@ -12,6 +12,12 @@ if os.path.isfile(dotenv_file):
     dotenv.load_dotenv(dotenv_file)
 ELEVEN_LABS_API_KEY = os.environ.get("ELEVEN_LABS_KEY")
 
+class ElevenLabsAPIError(Exception):
+    def __init__(self, status_code: int, detail: dict):
+        self.status_code = status_code
+        self.detail = detail
+        super().__init__(f"ElevenLabs API error {status_code}: {detail}")
+
 
 async def get_audio_from_eleven_labs(jap_text, output_path, voice_id):
 
@@ -34,8 +40,9 @@ async def get_audio_from_eleven_labs(jap_text, output_path, voice_id):
     response = requests.request("POST", url, json=payload, headers=headers)
 
     if response.status_code != 200:
-        raise RuntimeError(
-            f"ElevenLabs API error {response.status_code}: {response.text}"
+        raise ElevenLabsAPIError(
+            status_code=response.status_code,
+            detail=response.json().get("detail")
         )
 
     # Write audio bytes to file

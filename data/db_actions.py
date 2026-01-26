@@ -220,6 +220,49 @@ async def insert_translation_audio(
 
     return TranslationAudioResponse.model_validate(audio)
 
+#FETCH FROM DATABASE
+
+
+async def get_translation_with_audio_by_word(
+    session: AsyncSession,
+    word: str,
+) -> tuple[Translation | None, TranslationAudio | None]:
+    """
+        Get a traslation by word with the audio
+        
+        :param session: Description
+        :type session: AsyncSession
+        :param word: Description
+        :type word: str
+        :return: Description
+        :rtype: tuple[Translation | None, TranslationAudio | None]
+    """
+    # Case-insensitive lookup is usually what you want
+    stmt = (
+        select(Translation)
+        .where(Translation.word.ilike(word))
+        .options(selectinload(Translation.usages))
+    )
+
+    result = await session.execute(stmt)
+    translation = result.scalar_one_or_none()
+
+    if not translation:
+        return None, None
+
+    # Get most recent audio (or however you define "current")
+    audio_stmt = (
+        select(TranslationAudio)
+        .where(TranslationAudio.translation_id == translation.id)
+        .order_by(TranslationAudio.created_at.desc())
+        .limit(1)
+    )
+
+    audio_result = await session.execute(audio_stmt)
+    audio = audio_result.scalar_one_or_none()
+
+    return translation, audio
+
 
 async def main():
     # 1️⃣ Read JSON file
@@ -238,12 +281,17 @@ async def main():
 
     async with async_session() as session:
         # 3️⃣ Insert translation
-        response = await insert_translation(session, payload)
+        #response = await insert_translation(session, payload)
 
         #response = await insert_translation_audio(session,1,"https://japanese-translations.nl-ams-1.linodeobjects.com/japanese-translate/0ead6ffb-80f0-4351-8104-97ed96c46fd0.mp3","EXAVITQu4vr4xnSDxMaL")
+        
+        translation,audio = await get_translation_with_audio_by_word(session,"fArt")
+
+        print(translation,audio)
+
 
         # 4️⃣ Print the Pydantic response as JSON
-        print(response.json())
+        #print(response.json())
 
 
 if __name__ == "__main__":

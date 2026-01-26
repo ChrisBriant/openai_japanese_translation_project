@@ -13,6 +13,7 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 from sqlalchemy.orm import declarative_base, relationship
+from sqlalchemy.dialects.postgresql import CITEXT
 
 
 class Translation(Base):
@@ -21,7 +22,7 @@ class Translation(Base):
     id = Column(Integer, primary_key=True, index=True)
 
     # Source word (English)
-    word = Column(String(255), nullable=False)
+    word = Column(CITEXT, nullable=False)
 
     # Japanese translation
     translation = Column(String(255), nullable=False)

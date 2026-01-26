@@ -16,10 +16,11 @@ from data.db_actions import (
     TranslationResponse,
     TranslationAudioResponse,
     insert_translation,
-    insert_translation_audio   
+    insert_translation_audio,
+    get_translation_with_audio_by_word,   
 )
 from authentication.auth import get_api_key
-from ai.generate_audio import get_audio_from_eleven_labs
+from ai.generate_audio import get_audio_from_eleven_labs, ElevenLabsAPIError
 from ai.translate_eng_jap import ai_translate_eng_word_to_jap
 import uuid
 from pathlib import Path
@@ -78,8 +79,19 @@ async def translate_word_eng_jap(input_word : InputWord, api_key: str = Depends(
     #TODO:
     #Sanatize the input ? If necessary 
     #Check the DB first if the word already exists
+    #Setup db session
+    async_session = sessionmaker(
+        engine, class_=AsyncSession, expire_on_commit=False
+    )
 
-
+    async with async_session() as session:
+        translation, audio = await get_translation_with_audio_by_word(session,input_word.word)
+        if translation and audio:
+            return TranslationWithAudioResponse(
+                translation,
+                audio
+            )
+        
     print("INPUT WORD: ", input_word)
 
     #Generate the translation
@@ -89,10 +101,6 @@ async def translate_word_eng_jap(input_word : InputWord, api_key: str = Depends(
     print("Translation", translation["translation"])
 
     #Insert into the databse
-    async_session = sessionmaker(
-        engine, class_=AsyncSession, expire_on_commit=False
-    )
-
     async with async_session() as session:
         inserted_translation = await insert_translation(session,translation)
 
@@ -108,7 +116,17 @@ async def translate_word_eng_jap(input_word : InputWord, api_key: str = Depends(
 
     voice_id = input_word.voice_id if input_word.voice_id else "EXAVITQu4vr4xnSDxMaL"
 
-    audio_file_path = await get_audio_from_eleven_labs(translation['translation'],audio_path,voice_id)
+    try:
+        audio_file_path = await get_audio_from_eleven_labs(translation['translation'],audio_path,voice_id)
+    except ElevenLabsAPIError as elae:
+        print("ELAE", elae)
+        if elae.status_code == 404:
+            raise HTTPException(status_code=404, detail=f"A voice with the voice id ${voice_id} was not found.")
+        else:
+            raise HTTPException(status_code=400, detail="An error occurred generating the audio.")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail="An error occurred generating the audio.")
+
     print("GENERATED AUDIO ", audio_file_path)
 
     #Upload the audio file to S3 storage
