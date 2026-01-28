@@ -264,6 +264,8 @@ async def get_translation_with_audio_by_word(
     return translation, audio
 
 
+
+
 async def main():
     # 1️⃣ Read JSON file
     # get project root (parent of current file)
@@ -285,9 +287,9 @@ async def main():
 
         #response = await insert_translation_audio(session,1,"https://japanese-translations.nl-ams-1.linodeobjects.com/japanese-translate/0ead6ffb-80f0-4351-8104-97ed96c46fd0.mp3","EXAVITQu4vr4xnSDxMaL")
         
-        translation,audio = await get_translation_with_audio_by_word(session,"fArt")
+        translation,audio = await get_translation_with_audio_by_word(session,"cat")
 
-        print(translation,audio)
+        print(translation.reading,audio)
 
 
         # 4️⃣ Print the Pydantic response as JSON

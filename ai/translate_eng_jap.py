@@ -62,6 +62,8 @@ def ai_translate_eng_word_to_jap(word,context):
 
     # --- EXTRACT TEXT OUTPUT ---
     reply_data = response.choices[0].message.content.strip()
+    print("RAW:", reply_data)
+    print("REPR:", repr(reply_data))
 
     try:
         reply_dict = json.loads(reply_data)

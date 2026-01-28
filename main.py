@@ -117,7 +117,7 @@ async def translate_word_eng_jap(input_word : InputWord, api_key: str = Depends(
     voice_id = input_word.voice_id if input_word.voice_id else "EXAVITQu4vr4xnSDxMaL"
 
     try:
-        audio_file_path = await get_audio_from_eleven_labs(translation['translation'],audio_path,voice_id)
+        audio_file_path = await get_audio_from_eleven_labs(translation['reading'],audio_path,voice_id)
     except ElevenLabsAPIError as elae:
         print("ELAE", elae)
         if elae.status_code == 404:
