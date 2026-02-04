@@ -128,3 +128,38 @@ class TranslationAudio(Base):
         "Translation",
         back_populates="translation_audio",
     )
+
+
+class TranslationUsageAudio(Base):
+    __tablename__ = "translation_usage_audio"
+
+    id = Column(Integer, primary_key=True)
+
+    usage_id = Column(
+        Integer,
+        ForeignKey("translation_usages.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+
+    audio_id = Column(
+        Integer,
+        ForeignKey("translation_audio.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    created_at = Column(
+        TIMESTAMP,
+        server_default=func.current_timestamp(),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "usage_id",
+            "audio_id",
+            name="uq_usage_audio",
+        ),
+    )

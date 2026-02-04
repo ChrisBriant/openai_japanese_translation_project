@@ -75,6 +75,10 @@ class InputWord(BaseModel):
     context : str
     voice_id : Optional[str] = None
 
+class InputTranslationIdToVoice(BaseModel):
+    translation_id : int
+    voice_id : Optional[str] = None
+
 
 
 
@@ -156,18 +160,47 @@ async def translate_word_eng_jap(input_word : InputWord, api_key: str = Depends(
     return response
 
 @app.post('/getaudioforusagephrases', response_model=str)
-async def get_audio_for_usage_phrases(translation_id : int, api_key: str = Depends(get_api_key)):
-    print("TRANSLATION ID ", translation_id)
+async def get_audio_for_usage_phrases(translation_id_and_voice : InputTranslationIdToVoice, api_key: str = Depends(get_api_key)):
+    print("TRANSLATION ID ", translation_id_and_voice.translation_id)
     async_session = sessionmaker(
         engine, class_=AsyncSession, expire_on_commit=False
     )
     async with async_session() as session:
-        usages = await get_usages_by_translation_id(session,int(translation_id))
+        usages = await get_usages_by_translation_id(session,int(translation_id_and_voice.translation_id))
         print("USAGES", usages)
         if len(usages) < 1:
             raise HTTPException(status_code=404, detail=f"No usages found.")
-        for usage in usages:
+        for usage in usages[0:1]:
             print("USAGE OBJECT", usage.id, usage.ja)
+            #Generate the audio file
+            # BASE_DIR = Path(__file__).resolve().parent
+            # audio_dir = BASE_DIR / "audio"
+            # audio_dir.mkdir(exist_ok=True)
+            # audio_filename = str(uuid.uuid4()) + ".mp3"
+            # audio_path = audio_dir / audio_filename
+
+
+            voice_id_to_send = translation_id_and_voice.voice_id if translation_id_and_voice.voice_id else "EXAVITQu4vr4xnSDxMaL"
+            print("THE VOICE ID IS", voice_id_to_send)
+
+            # try:
+            #     audio_file_path = await get_audio_from_eleven_labs(translation['reading'],audio_path,voice_id)
+            # except ElevenLabsAPIError as elae:
+            #     print("ELAE", elae)
+            #     if elae.status_code == 404:
+            #         raise HTTPException(status_code=404, detail=f"A voice with the voice id ${voice_id} was not found.")
+            #     else:
+            #         raise HTTPException(status_code=400, detail="An error occurred generating the audio.")
+            # except Exception as e:
+            #     raise HTTPException(status_code=400, detail="An error occurred generating the audio.")
+
+            #Upload the audio file to S3 storage
+            # with open(audio_file_path, "rb") as f:
+            #     #Get the file data required for transferring to S3
+            #     audio_data = f.read()
+            # storage_url = await upload_to_s3(audio_data,audio_filename)
+            # print("UPLOADED FILE ", storage_url)
+
     return "Hello"
 
 @app.get('/gettranslation', response_model=TranslationWithAudioResponse)
@@ -175,9 +208,6 @@ async def get_translation_by_word_or_id(
     translation_id: int = Query(None, ge=1, description="Page number, must be >= 1"),
     word: str = Query(None, description="Page number, must be >= 1"),
 ):
-    print("translation id=", translation_id)
-    print("word=", word)
-
     if(not word and not translation_id):
         raise HTTPException(status_code=400,detail="translation_id or word must be included in the query parameters")
 
@@ -193,16 +223,14 @@ async def get_translation_by_word_or_id(
         #Try the id first
         if(translation_id):
             translation, audio = await get_translation_with_audio_by_id(session,translation_id)
-            print("TRANSLATION FOUND", translation)
             #print(translation)
             if not translation and word:
                 #Try getting by word
                 translation, audio = await get_translation_with_audio_by_word(session,word)
-                print("TRANSLATION FOUND", translation)
+
         if not translation_id and word:
             #Try getting by word
             translation, audio = await get_translation_with_audio_by_word(session,word)
-            print("TRANSLATION FOUND", translation)
 
     if not translation:
         raise HTTPException(status_code=404,detail="Translation not found.")
