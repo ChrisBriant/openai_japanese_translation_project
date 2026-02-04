@@ -15,14 +15,18 @@ from sqlalchemy.orm import sessionmaker
 from data.db_actions import (
     TranslationResponse,
     TranslationAudioResponse,
+    TranslationWithAudioResponse,
     insert_translation,
     insert_translation_audio,
-    get_translation_with_audio_by_word,   
+    get_translation_with_audio_by_word,
+    get_translation_with_audio_by_id,
+    get_usages_by_translation_id,
 )
 from authentication.auth import get_api_key
 from ai.generate_audio import get_audio_from_eleven_labs, ElevenLabsAPIError
 from ai.translate_eng_jap import ai_translate_eng_word_to_jap
 import uuid
+import re
 from pathlib import Path
 #import bleach
 
@@ -59,9 +63,9 @@ if os.path.isfile(dotenv_file):
 
 #RESPONSE MODELS
 
-class TranslationWithAudioResponse(BaseModel):
-    translation: TranslationResponse
-    audio: TranslationAudioResponse
+# class TranslationWithAudioResponse(BaseModel):
+#     translation: TranslationResponse
+#     audio: TranslationAudioResponse
 
 
 #INPUT MODELS
@@ -76,8 +80,11 @@ class InputWord(BaseModel):
 
 @app.post('/translatewordengtojap', response_model=TranslationWithAudioResponse)
 async def translate_word_eng_jap(input_word : InputWord, api_key: str = Depends(get_api_key)):
-    #TODO:
-    #Sanatize the input ? If necessary 
+    #Sanatize the input
+    word = input_word.word.strip().lower()
+    if not re.fullmatch(r"[a-z]+", word):
+        raise HTTPException(status_code=400, detail="The input needs to be a single word.")
+
     #Check the DB first if the word already exists
     #Setup db session
     async_session = sessionmaker(
@@ -85,7 +92,7 @@ async def translate_word_eng_jap(input_word : InputWord, api_key: str = Depends(
     )
 
     async with async_session() as session:
-        translation, audio = await get_translation_with_audio_by_word(session,input_word.word)
+        translation, audio = await get_translation_with_audio_by_word(session,word)
         if translation and audio:
             return TranslationWithAudioResponse(
                 translation,
@@ -97,7 +104,7 @@ async def translate_word_eng_jap(input_word : InputWord, api_key: str = Depends(
     #Generate the translation
     # # 2️⃣ Create async session
 
-    translation = ai_translate_eng_word_to_jap(input_word.word, input_word.context)
+    translation = ai_translate_eng_word_to_jap(word, input_word.context)
     print("Translation", translation["translation"])
 
     #Insert into the databse
@@ -148,8 +155,64 @@ async def translate_word_eng_jap(input_word : InputWord, api_key: str = Depends(
 
     return response
 
+@app.post('/getaudioforusagephrases', response_model=str)
+async def get_audio_for_usage_phrases(translation_id : int, api_key: str = Depends(get_api_key)):
+    print("TRANSLATION ID ", translation_id)
+    async_session = sessionmaker(
+        engine, class_=AsyncSession, expire_on_commit=False
+    )
+    async with async_session() as session:
+        usages = await get_usages_by_translation_id(session,int(translation_id))
+        print("USAGES", usages)
+        if len(usages) < 1:
+            raise HTTPException(status_code=404, detail=f"No usages found.")
+        for usage in usages:
+            print("USAGE OBJECT", usage.id, usage.ja)
+    return "Hello"
 
+@app.get('/gettranslation', response_model=TranslationWithAudioResponse)
+async def get_translation_by_word_or_id(
+    translation_id: int = Query(None, ge=1, description="Page number, must be >= 1"),
+    word: str = Query(None, description="Page number, must be >= 1"),
+):
+    print("translation id=", translation_id)
+    print("word=", word)
 
+    if(not word and not translation_id):
+        raise HTTPException(status_code=400,detail="translation_id or word must be included in the query parameters")
+
+    async_session = sessionmaker(
+        engine, 
+        class_=AsyncSession, expire_on_commit=False
+    )
+
+    translation = None
+    audio = None
+
+    async with async_session() as session:
+        #Try the id first
+        if(translation_id):
+            translation, audio = await get_translation_with_audio_by_id(session,translation_id)
+            print("TRANSLATION FOUND", translation)
+            #print(translation)
+            if not translation and word:
+                #Try getting by word
+                translation, audio = await get_translation_with_audio_by_word(session,word)
+                print("TRANSLATION FOUND", translation)
+        if not translation_id and word:
+            #Try getting by word
+            translation, audio = await get_translation_with_audio_by_word(session,word)
+            print("TRANSLATION FOUND", translation)
+
+    if not translation:
+        raise HTTPException(status_code=404,detail="Translation not found.")
+    
+    #Create the response
+    response = TranslationWithAudioResponse(
+        translation=translation,
+        audio=audio
+    )
+    return response
 
 
 
