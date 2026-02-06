@@ -98,6 +98,14 @@ class TranslationUsage(Base):
         back_populates="usages",
     )
 
+    # ✅ ADD THIS
+    usage_audio = relationship(
+        "TranslationUsageAudio",
+        uselist=False,
+        back_populates="usage",
+        cascade="all, delete-orphan",
+    )
+
  
 class TranslationAudio(Base):
     __tablename__ = "translation_audio"
@@ -130,6 +138,42 @@ class TranslationAudio(Base):
     )
 
 
+# class TranslationUsageAudio(Base):
+#     __tablename__ = "translation_usage_audio"
+
+#     id = Column(Integer, primary_key=True)
+
+#     usage_id = Column(
+#         Integer,
+#         ForeignKey("translation_usages.id", ondelete="CASCADE"),
+#         nullable=False,
+#         unique=True,
+#         index=True,
+#     )
+
+#     audio_id = Column(
+#         Integer,
+#         ForeignKey("translation_audio.id", ondelete="CASCADE"),
+#         nullable=False,
+#         index=True,
+#     )
+
+#     created_at = Column(
+#         TIMESTAMP,
+#         server_default=func.current_timestamp(),
+#         nullable=False,
+#     )
+
+#     __table_args__ = (
+#         UniqueConstraint(
+#             "usage_id",
+#             "audio_id",
+#             name="uq_usage_audio",
+#         ),
+#     )
+
+#     audio = relationship("TranslationAudio")
+
 class TranslationUsageAudio(Base):
     __tablename__ = "translation_usage_audio"
 
@@ -143,12 +187,9 @@ class TranslationUsageAudio(Base):
         index=True,
     )
 
-    audio_id = Column(
-        Integer,
-        ForeignKey("translation_audio.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
+    storage_url = Column(String(1024), nullable=False)
+    voice_id = Column(String(100), nullable=True)
+    audio_format = Column(String(20), nullable=False, default="mp3")
 
     created_at = Column(
         TIMESTAMP,
@@ -156,12 +197,10 @@ class TranslationUsageAudio(Base):
         nullable=False,
     )
 
-    __table_args__ = (
-        UniqueConstraint(
-            "usage_id",
-            "audio_id",
-            name="uq_usage_audio",
-        ),
-    )
+    usage = relationship("TranslationUsage", back_populates="audio")
 
-    audio = relationship("TranslationAudio")
+    # ✅ ADD THIS
+    usage = relationship(
+        "TranslationUsage",
+        back_populates="usage_audio",
+    )

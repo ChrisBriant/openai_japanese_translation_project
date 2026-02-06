@@ -11,13 +11,43 @@ from pathlib import Path
 from datetime import datetime
 import json
 
+
+class UsageAudio(BaseModel):
+    id : int
+    usage_id : int
+    storage_url : str
+    voice_id : str
+    audio_format : str
+    created_at : datetime
+
+    class Config:
+        from_attributes=True
+
 class Usage(BaseModel):
+    id: int  # DB primary key
+    en: str
+    ja: str
+    usage_audio : UsageAudio | None
+
+    class Config:
+        from_attributes=True
+
+class UsageWithoutAudio(BaseModel):
     id: int  # DB primary key
     en: str
     ja: str
 
     class Config:
         from_attributes=True
+
+# class UsageWithoutAudio(BaseModel):
+#     id: int  # DB primary key
+#     en: str
+#     ja: str
+#     usage_audio : UsageAudio | None
+
+#     class Config:
+#         from_attributes=True
 
 
 class TranslationResponse(BaseModel):
@@ -27,6 +57,17 @@ class TranslationResponse(BaseModel):
     reading: str | None
     script: str
     usages: List[Usage] = []
+
+    class Config:
+        from_attributes=True
+
+class TranslationResponseWithoutUsageAudio(BaseModel):
+    id: int  # DB primary key
+    word: str
+    translation: str
+    reading: str | None
+    script: str
+    usages: List[UsageWithoutAudio] = []
 
     class Config:
         from_attributes=True
@@ -47,7 +88,6 @@ class TranslationWithAudioResponse(BaseModel):
     audio: TranslationAudioResponse | None
 
 class LinkResponse(BaseModel):
-    audio_id : int
     usage_id : int
     id : int
     storage_url : str
@@ -181,12 +221,39 @@ async def insert_translation(session: AsyncSession, payload: dict) -> Translatio
         Translation.translation == payload["translation"],
         Translation.reading == payload.get("reading")
     )
+
+    # stmt = (
+    #     select(Translation)
+    #     .where(Translation.id == translation.id)
+    #     .options(
+    #         selectinload(Translation.usages)
+    #         .selectinload(TranslationUsage.usage_audio)
+    #     )
+    # )
+
+    print("PAYLOAD", payload)
+
+    # stmt = (
+    #     select(Translation)
+    #     .options(
+    #         selectinload(Translation.usages)
+    #         .selectinload(TranslationUsage.usage_audio)
+    #     )
+    #     .where(Translation.id == translation.id)
+    # )
     result = await session.execute(stmt)
     existing = result.scalars().first()
     if existing:
-        return TranslationResponse.model_validate(existing)
+        return TranslationResponseWithoutUsageAudio.model_validate(existing)
+    
+    # translation = result.scalars().first()
+    # if translation:
+    #     return TranslationResponse.model_validate(translation)
 
     # Create new translation + usages
+    #TODO
+    #THIS INSERTS, but it is unable to return the response properly
+    #On second attempt it works because it is returning a different path
     translation = Translation(
         word=payload["word"],
         translation=payload["translation"],
@@ -210,7 +277,7 @@ async def insert_translation(session: AsyncSession, payload: dict) -> Translatio
     result = await session.execute(stmt)
     translation_with_usages = result.scalars().first()
 
-    return TranslationResponse.model_validate(translation_with_usages)
+    return TranslationResponseWithoutUsageAudio.model_validate(translation_with_usages)
 
 
 
@@ -277,66 +344,96 @@ async def insert_translation_audio(
 #     return link
 
 
+# async def add_usage_audio(
+#     session: AsyncSession,
+#     translation_id: int,
+#     usage_id: int,
+#     storage_url: str,
+#     voice_id: str | None = None,
+#     audio_format: str = "mp3"
+# ) -> TranslationUsageAudio:
+#     """
+#     Create audio and link it to a usage.
+#     If the usage already has audio, return the existing link.
+#     """
+
+#     try:
+#         # 1️⃣ Create TranslationAudio
+#         audio = TranslationAudio(
+#             translation_id=translation_id,
+#             storage_url=storage_url,
+#             voice_id=voice_id,
+#             audio_format=audio_format,
+#         )
+#         session.add(audio)
+#         await session.flush()  # get audio.id
+
+#         # 2️⃣ Create linking row
+#         link = TranslationUsageAudio(
+#             usage_id=usage_id,
+#             audio_id=audio.id
+#         )
+#         session.add(link)
+
+#         await session.commit()
+
+#         # 🔁 Reload link WITH audio eagerly loaded
+#         stmt = (
+#             select(TranslationUsageAudio)
+#             .options(selectinload(TranslationUsageAudio.audio))
+#             .where(TranslationUsageAudio.id == link.id)
+#         )
+#         result = await session.execute(stmt)
+#         link = result.scalars().one()
+
+#         return link
+
+#     except IntegrityError:
+#         await session.rollback()
+
+#         # 🔁 Fetch existing link WITH audio eagerly loaded
+#         stmt = (
+#             select(TranslationUsageAudio)
+#             .options(selectinload(TranslationUsageAudio.audio))
+#             .where(TranslationUsageAudio.usage_id == usage_id)
+#         )
+#         result = await session.execute(stmt)
+#         existing = result.scalars().first()
+
+#         if existing:
+#             return existing
+        
+#         raise RuntimeError("Integrity error but no existing usage-audio link found")
+
+
 async def add_usage_audio(
     session: AsyncSession,
-    translation_id: int,
     usage_id: int,
     storage_url: str,
     voice_id: str | None = None,
-    audio_format: str = "mp3"
+    audio_format: str = "mp3",
 ) -> TranslationUsageAudio:
-    """
-    Create audio and link it to a usage.
-    If the usage already has audio, return the existing link.
-    """
-
     try:
-        # 1️⃣ Create TranslationAudio
-        audio = TranslationAudio(
-            translation_id=translation_id,
+        usage_audio = TranslationUsageAudio(
+            usage_id=usage_id,
             storage_url=storage_url,
             voice_id=voice_id,
             audio_format=audio_format,
         )
-        session.add(audio)
-        await session.flush()  # get audio.id
-
-        # 2️⃣ Create linking row
-        link = TranslationUsageAudio(
-            usage_id=usage_id,
-            audio_id=audio.id
-        )
-        session.add(link)
-
+        session.add(usage_audio)
         await session.commit()
-
-        # 🔁 Reload link WITH audio eagerly loaded
-        stmt = (
-            select(TranslationUsageAudio)
-            .options(selectinload(TranslationUsageAudio.audio))
-            .where(TranslationUsageAudio.id == link.id)
-        )
-        result = await session.execute(stmt)
-        link = result.scalars().one()
-
-        return link
+        return usage_audio
 
     except IntegrityError:
+        print("CAUGHT INTEGRITY ERROR")
         await session.rollback()
 
-        # 🔁 Fetch existing link WITH audio eagerly loaded
         stmt = (
             select(TranslationUsageAudio)
-            .options(selectinload(TranslationUsageAudio.audio))
             .where(TranslationUsageAudio.usage_id == usage_id)
         )
         result = await session.execute(stmt)
-        existing = result.scalars().first()
-
-        if existing:
-            return existing
-        
-        raise RuntimeError("Integrity error but no existing usage-audio link found")
+        return result.scalar_one()
     
 #FETCH FROM DATABASE
 
@@ -346,7 +443,6 @@ async def get_existing_audio_for_usage(
 ) -> LinkResponse | None:
     stmt = (
         select(TranslationUsageAudio)
-        .options(joinedload(TranslationUsageAudio.audio))
         .where(TranslationUsageAudio.usage_id == usage_id)
     )
 
@@ -356,34 +452,112 @@ async def get_existing_audio_for_usage(
     if not link:
         return None
 
+    print("LINK", link.__dict__)
+
     return LinkResponse.model_validate({
         "id": link.id,
-        "usage_id": link.usage_id,
-        "audio_id": link.audio_id,
-        "storage_url": link.audio.storage_url,
+        "usage_id": usage_id,
+        "storage_url": link.storage_url,
         "created_at": link.created_at,
     })
 
+
+# async def get_translation_with_audio_by_word(
+#     session: AsyncSession,
+#     word: str,
+# ) -> tuple[Translation | None, TranslationAudio | None]:
+#     """
+#         Get a traslation by word with the audio
+        
+#         :param session: Description
+#         :type session: AsyncSession
+#         :param word: Description
+#         :type word: str
+#         :return: Description
+#         :rtype: tuple[Translation | None, TranslationAudio | None]
+#     """
+#     # Case-insensitive lookup is usually what you want
+#     stmt = (
+#         select(Translation)
+#         .where(Translation.word.ilike(word))
+#         .options(selectinload(Translation.usages))
+#     )
+
+#     result = await session.execute(stmt)
+#     translation = result.scalar_one_or_none()
+
+#     if not translation:
+#         return None, None
+
+#     # Get most recent audio (or however you define "current")
+#     audio_stmt = (
+#         select(TranslationAudio)
+#         .where(TranslationAudio.translation_id == translation.id)
+#         .order_by(TranslationAudio.created_at.desc())
+#         .limit(1)
+#     )
+
+#     audio_result = await session.execute(audio_stmt)
+#     audio = audio_result.scalar_one_or_none()
+
+#     return translation, audio
+
+
+# async def get_translation_with_audio_by_id(
+#     session: AsyncSession,
+#     id: int,
+# ) -> tuple[Translation | None, TranslationAudio | None]:
+#     """
+#         Get a traslation by id with the audio
+        
+#         :param session: Description
+#         :type session: AsyncSession
+#         :param word: Description
+#         :type id: int
+#         :return: Description
+#         :rtype: tuple[Translation | None, TranslationAudio | None]
+#     """
+#     # Case-insensitive lookup is usually what you want
+#     #TODO:
+#     #It needs to make the join of translation usages to the audio if it exists and then include in the response
+#     stmt = (
+#         select(Translation)
+#         .where(Translation.id==id)
+#         .options(selectinload(Translation.usages))
+#     )
+
+#     result = await session.execute(stmt)
+#     translation = result.scalar_one_or_none()
+
+#     if not translation:
+#         return None, None
+
+#     # Get most recent audio (or however you define "current")
+#     audio_stmt = (
+#         select(TranslationAudio)
+#         .where(TranslationAudio.translation_id == translation.id)
+#         .order_by(TranslationAudio.created_at.desc())
+#         .limit(1)
+#     )
+
+#     audio_result = await session.execute(audio_stmt)
+#     audio = audio_result.scalar_one_or_none()
+
+#     return translation, audio
 
 async def get_translation_with_audio_by_word(
     session: AsyncSession,
     word: str,
 ) -> tuple[Translation | None, TranslationAudio | None]:
-    """
-        Get a traslation by word with the audio
-        
-        :param session: Description
-        :type session: AsyncSession
-        :param word: Description
-        :type word: str
-        :return: Description
-        :rtype: tuple[Translation | None, TranslationAudio | None]
-    """
-    # Case-insensitive lookup is usually what you want
+    # Load translation + usages + usage audio + actual audio
     stmt = (
         select(Translation)
         .where(Translation.word.ilike(word))
-        .options(selectinload(Translation.usages))
+        .options(
+            selectinload(Translation.usages)
+            .selectinload(TranslationUsage.usage_audio)
+            .selectinload(TranslationUsageAudio.usage)
+        )
     )
 
     result = await session.execute(stmt)
@@ -392,59 +566,19 @@ async def get_translation_with_audio_by_word(
     if not translation:
         return None, None
 
-    # Get most recent audio (or however you define "current")
+    # Get the most recent translation audio for the word itself
     audio_stmt = (
         select(TranslationAudio)
         .where(TranslationAudio.translation_id == translation.id)
         .order_by(TranslationAudio.created_at.desc())
         .limit(1)
     )
-
     audio_result = await session.execute(audio_stmt)
     audio = audio_result.scalar_one_or_none()
 
-    return translation, audio
-
-
-async def get_translation_with_audio_by_id(
-    session: AsyncSession,
-    id: int,
-) -> tuple[Translation | None, TranslationAudio | None]:
-    """
-        Get a traslation by id with the audio
-        
-        :param session: Description
-        :type session: AsyncSession
-        :param word: Description
-        :type id: int
-        :return: Description
-        :rtype: tuple[Translation | None, TranslationAudio | None]
-    """
-    # Case-insensitive lookup is usually what you want
-    #TODO:
-    #It needs to make the join of translation usages to the audio if it exists and then include in the response
-    stmt = (
-        select(Translation)
-        .where(Translation.id==id)
-        .options(selectinload(Translation.usages))
-    )
-
-    result = await session.execute(stmt)
-    translation = result.scalar_one_or_none()
-
-    if not translation:
-        return None, None
-
-    # Get most recent audio (or however you define "current")
-    audio_stmt = (
-        select(TranslationAudio)
-        .where(TranslationAudio.translation_id == translation.id)
-        .order_by(TranslationAudio.created_at.desc())
-        .limit(1)
-    )
-
-    audio_result = await session.execute(audio_stmt)
-    audio = audio_result.scalar_one_or_none()
+    print("THIS IS THE TRANSLATION OBJECT", translation.__dict__)
+    for trans_usage in translation.usages:
+        print(trans_usage.__dict__)
 
     return translation, audio
 
@@ -458,6 +592,55 @@ async def get_usages_by_translation_id(
 
     result = await session.execute(stmt)
     return result.scalars().all()
+
+async def get_translation_with_audio_by_id(
+    session: AsyncSession,
+    id: int,
+) -> tuple[Translation | None, TranslationAudio | None]:
+    # Load translation + usages + usage audio + actual audio
+    stmt = (
+        select(Translation)
+        .where(Translation.id == id)
+        .options(
+            selectinload(Translation.usages)
+            .selectinload(TranslationUsage.usage_audio)
+            .selectinload(TranslationUsageAudio.usage)
+        )
+    )
+
+    result = await session.execute(stmt)
+    translation = result.scalar_one_or_none()
+
+    if not translation:
+        return None, None
+
+    # Get the most recent translation audio for the word itself
+    audio_stmt = (
+        select(TranslationAudio)
+        .where(TranslationAudio.translation_id == translation.id)
+        .order_by(TranslationAudio.created_at.desc())
+        .limit(1)
+    )
+    audio_result = await session.execute(audio_stmt)
+    audio = audio_result.scalar_one_or_none()
+
+    print("THIS IS THE TRANSLATION OBJECT", translation.__dict__)
+    for trans_usage in translation.usages:
+        print(trans_usage.__dict__)
+
+    return translation, audio
+
+async def get_usages_by_translation_id(
+    session: AsyncSession,
+    translation_id: int,
+) -> list[TranslationUsage]:
+    stmt = select(TranslationUsage).where(
+        TranslationUsage.translation_id == translation_id
+    )
+
+    result = await session.execute(stmt)
+    return result.scalars().all()
+
 
 
 

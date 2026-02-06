@@ -100,10 +100,11 @@ async def translate_word_eng_jap(input_word : InputWord, api_key: str = Depends(
 
     async with async_session() as session:
         translation, audio = await get_translation_with_audio_by_word(session,word)
+        print("TRANSLATION AND AUDIO",translation,audio)
         if translation and audio:
             return TranslationWithAudioResponse(
-                translation,
-                audio
+                translation=translation,
+                audio=audio
             )
         
     print("INPUT WORD: ", input_word)
@@ -178,6 +179,8 @@ async def get_audio_for_usage_phrases(translation_id_and_voice : InputTranslatio
             raise HTTPException(status_code=404, detail=f"No usages found.")
         for usage in usages[0:1]:
             print("USAGE OBJECT", usage.id, usage.ja)
+            #Set usage ID to a variable
+            usage_id = usage.id
 
 
             #This gets the audio link if it already exists so we don't waste tokens for Eleven LABS
@@ -222,14 +225,13 @@ async def get_audio_for_usage_phrases(translation_id_and_voice : InputTranslatio
             # storage_url = await upload_to_s3(audio_data,audio_filename)
             # print("UPLOADED FILE ", storage_url)
 
-            link = await add_usage_audio(session,translation_id_and_voice.translation_id,usage.id,"JUNK-STORAGE-URL",voice_id_to_send)
+            link = await add_usage_audio(session,usage_id,"JUNK-STORAGE-URL",voice_id_to_send)
             #link_obj = LinkResponse.model_validate(link)
-            print("ADDED STORAGE LINK TO DB", link.audio.__dict__)
+            print("ADDED STORAGE LINK TO DB", link.__dict__)
             usages_list.append(LinkResponse.model_validate({
                 "id": link.id,
-                "usage_id": link.usage_id,
-                "audio_id": link.audio_id,
-                "storage_url": link.audio.storage_url,
+                "usage_id": usage_id,
+                "storage_url": link.storage_url,
                 "created_at": link.created_at,
             }))
     return usages_list
@@ -266,6 +268,8 @@ async def get_translation_by_word_or_id(
     if not translation:
         raise HTTPException(status_code=404,detail="Translation not found.")
     
+
+
     #Create the response
     response = TranslationWithAudioResponse(
         translation=translation,
