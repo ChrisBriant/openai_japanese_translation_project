@@ -16,11 +16,14 @@ from data.db_actions import (
     TranslationResponse,
     TranslationAudioResponse,
     TranslationWithAudioResponse,
+    LinkResponse,
     insert_translation,
     insert_translation_audio,
     get_translation_with_audio_by_word,
     get_translation_with_audio_by_id,
     get_usages_by_translation_id,
+    add_usage_audio,
+    get_existing_audio_for_usage,
 )
 from authentication.auth import get_api_key
 from ai.generate_audio import get_audio_from_eleven_labs, ElevenLabsAPIError
@@ -159,12 +162,15 @@ async def translate_word_eng_jap(input_word : InputWord, api_key: str = Depends(
 
     return response
 
-@app.post('/getaudioforusagephrases', response_model=str)
+@app.post('/getaudioforusagephrases', response_model=List[LinkResponse])
 async def get_audio_for_usage_phrases(translation_id_and_voice : InputTranslationIdToVoice, api_key: str = Depends(get_api_key)):
     print("TRANSLATION ID ", translation_id_and_voice.translation_id)
     async_session = sessionmaker(
         engine, class_=AsyncSession, expire_on_commit=False
     )
+
+    usages_list = []
+
     async with async_session() as session:
         usages = await get_usages_by_translation_id(session,int(translation_id_and_voice.translation_id))
         print("USAGES", usages)
@@ -172,13 +178,28 @@ async def get_audio_for_usage_phrases(translation_id_and_voice : InputTranslatio
             raise HTTPException(status_code=404, detail=f"No usages found.")
         for usage in usages[0:1]:
             print("USAGE OBJECT", usage.id, usage.ja)
+
+
+            #This gets the audio link if it already exists so we don't waste tokens for Eleven LABS
+
+            existing_usage = await get_existing_audio_for_usage(session,usage.id)
+            if(existing_usage):
+                # usages_list.append(LinkResponse.model_validate({
+                #     "id": existing_usage.id,
+                #     "usage_id": existing_usage.usage_id,
+                #     "audio_id": existing_usage.audio_id,
+                #     "storage_url": existing_usage.audio.storage_url,
+                #     "created_at": existing_usage.created_at,
+                # }))
+                usages_list.append(existing_usage)
+                continue
+
             #Generate the audio file
             # BASE_DIR = Path(__file__).resolve().parent
             # audio_dir = BASE_DIR / "audio"
             # audio_dir.mkdir(exist_ok=True)
             # audio_filename = str(uuid.uuid4()) + ".mp3"
             # audio_path = audio_dir / audio_filename
-
 
             voice_id_to_send = translation_id_and_voice.voice_id if translation_id_and_voice.voice_id else "EXAVITQu4vr4xnSDxMaL"
             print("THE VOICE ID IS", voice_id_to_send)
@@ -201,7 +222,17 @@ async def get_audio_for_usage_phrases(translation_id_and_voice : InputTranslatio
             # storage_url = await upload_to_s3(audio_data,audio_filename)
             # print("UPLOADED FILE ", storage_url)
 
-    return "Hello"
+            link = await add_usage_audio(session,translation_id_and_voice.translation_id,usage.id,"JUNK-STORAGE-URL",voice_id_to_send)
+            #link_obj = LinkResponse.model_validate(link)
+            print("ADDED STORAGE LINK TO DB", link.audio.__dict__)
+            usages_list.append(LinkResponse.model_validate({
+                "id": link.id,
+                "usage_id": link.usage_id,
+                "audio_id": link.audio_id,
+                "storage_url": link.audio.storage_url,
+                "created_at": link.created_at,
+            }))
+    return usages_list
 
 @app.get('/gettranslation', response_model=TranslationWithAudioResponse)
 async def get_translation_by_word_or_id(

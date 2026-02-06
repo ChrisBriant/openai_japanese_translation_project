@@ -163,3 +163,5 @@ class TranslationUsageAudio(Base):
             name="uq_usage_audio",
         ),
     )
+
+    audio = relationship("TranslationAudio")

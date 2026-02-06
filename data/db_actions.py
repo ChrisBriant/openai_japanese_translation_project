@@ -2,11 +2,11 @@ from typing import List
 from pydantic import BaseModel
 from sqlalchemy.future import select
 from sqlalchemy.exc import IntegrityError
-from .models import Translation, TranslationUsage, TranslationAudio
+from .models import Translation, TranslationUsage, TranslationAudio, TranslationUsageAudio
 from .db import engine
 import asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import sessionmaker, selectinload
+from sqlalchemy.orm import sessionmaker, selectinload, joinedload
 from pathlib import Path
 from datetime import datetime
 import json
@@ -45,6 +45,16 @@ class TranslationAudioResponse(BaseModel):
 class TranslationWithAudioResponse(BaseModel):
     translation: TranslationResponse
     audio: TranslationAudioResponse | None
+
+class LinkResponse(BaseModel):
+    audio_id : int
+    usage_id : int
+    id : int
+    storage_url : str
+    created_at : datetime
+
+    class Config:
+        from_attributes = True  # SQLAlchemy compatibility
 
 # async def insert_translation(session: AsyncSession, payload: dict) -> TranslationResponse:
 #     """
@@ -224,7 +234,135 @@ async def insert_translation_audio(
 
     return TranslationAudioResponse.model_validate(audio)
 
+
+# async def add_usage_audio(
+#     session: AsyncSession,
+#     translation_id: int,
+#     usage_id: int,
+#     storage_url: str,
+#     voice_id: str | None = None,
+#     audio_format: str = "mp3"
+# ) -> TranslationUsageAudio:
+#     """
+#     Insert a new audio file and link it to a usage.
+
+#     Raises ValueError if this usage already has an audio linked.
+#     Returns the linking object.
+#     """
+
+#     # 1️⃣ Create TranslationAudio row
+#     audio = TranslationAudio(
+#         translation_id=translation_id,
+#         storage_url=storage_url,
+#         voice_id=voice_id,
+#         audio_format=audio_format,
+#     )
+#     session.add(audio)
+#     await session.flush()  # ensures `audio.id` is populated
+
+#     # 2️⃣ Create the linking row
+#     link = TranslationUsageAudio(
+#         usage_id=usage_id,
+#         audio_id=audio.id
+#     )
+#     session.add(link)
+
+#     try:
+#         await session.commit()
+#         await session.refresh(link)
+#     except IntegrityError:
+#         await session.rollback()
+#         raise ValueError(f"Usage ID {usage_id} already has an audio linked.")
+
+#     return link
+
+
+async def add_usage_audio(
+    session: AsyncSession,
+    translation_id: int,
+    usage_id: int,
+    storage_url: str,
+    voice_id: str | None = None,
+    audio_format: str = "mp3"
+) -> TranslationUsageAudio:
+    """
+    Create audio and link it to a usage.
+    If the usage already has audio, return the existing link.
+    """
+
+    try:
+        # 1️⃣ Create TranslationAudio
+        audio = TranslationAudio(
+            translation_id=translation_id,
+            storage_url=storage_url,
+            voice_id=voice_id,
+            audio_format=audio_format,
+        )
+        session.add(audio)
+        await session.flush()  # get audio.id
+
+        # 2️⃣ Create linking row
+        link = TranslationUsageAudio(
+            usage_id=usage_id,
+            audio_id=audio.id
+        )
+        session.add(link)
+
+        await session.commit()
+
+        # 🔁 Reload link WITH audio eagerly loaded
+        stmt = (
+            select(TranslationUsageAudio)
+            .options(selectinload(TranslationUsageAudio.audio))
+            .where(TranslationUsageAudio.id == link.id)
+        )
+        result = await session.execute(stmt)
+        link = result.scalars().one()
+
+        return link
+
+    except IntegrityError:
+        await session.rollback()
+
+        # 🔁 Fetch existing link WITH audio eagerly loaded
+        stmt = (
+            select(TranslationUsageAudio)
+            .options(selectinload(TranslationUsageAudio.audio))
+            .where(TranslationUsageAudio.usage_id == usage_id)
+        )
+        result = await session.execute(stmt)
+        existing = result.scalars().first()
+
+        if existing:
+            return existing
+        
+        raise RuntimeError("Integrity error but no existing usage-audio link found")
+    
 #FETCH FROM DATABASE
+
+async def get_existing_audio_for_usage(
+    session,
+    usage_id: int
+) -> LinkResponse | None:
+    stmt = (
+        select(TranslationUsageAudio)
+        .options(joinedload(TranslationUsageAudio.audio))
+        .where(TranslationUsageAudio.usage_id == usage_id)
+    )
+
+    result = await session.execute(stmt)
+    link = result.scalar_one_or_none()
+
+    if not link:
+        return None
+
+    return LinkResponse.model_validate({
+        "id": link.id,
+        "usage_id": link.usage_id,
+        "audio_id": link.audio_id,
+        "storage_url": link.audio.storage_url,
+        "created_at": link.created_at,
+    })
 
 
 async def get_translation_with_audio_by_word(
@@ -273,7 +411,7 @@ async def get_translation_with_audio_by_id(
     id: int,
 ) -> tuple[Translation | None, TranslationAudio | None]:
     """
-        Get a traslation by word with the audio
+        Get a traslation by id with the audio
         
         :param session: Description
         :type session: AsyncSession
@@ -283,6 +421,8 @@ async def get_translation_with_audio_by_id(
         :rtype: tuple[Translation | None, TranslationAudio | None]
     """
     # Case-insensitive lookup is usually what you want
+    #TODO:
+    #It needs to make the join of translation usages to the audio if it exists and then include in the response
     stmt = (
         select(Translation)
         .where(Translation.id==id)
