@@ -274,10 +274,60 @@ async def insert_translation(session: AsyncSession, payload: dict) -> Translatio
     stmt = select(Translation).options(selectinload(Translation.usages)).where(
         Translation.id == translation.id
     )
+
+    # stmt = select(Translation).options(selectinload(Translation.usages)).where(
+    #     Translation.word == payload["word"],
+    #     Translation.translation == payload["translation"],
+    #     Translation.reading == payload.get("reading")
+    # )
     result = await session.execute(stmt)
     translation_with_usages = result.scalars().first()
+    #ATTEMPT BELOW DOES NOT WORK
+    # new_usages = []
+    # for u in translation_with_usages.usages:
+    #     print("USAGE", u.__dict__)
+    #     new_usages.append(Usage(
+    #         id=u.id,
+    #         en=u.en,
+    #         ja=u.ja,
+    #         usage_audio=None
+    #     ))
+    # translation_with_usages.usages = new_usages
+    # print("DO I GET HERE")
+    # translation_response = TranslationResponse(
+    #     id=translation_with_usages.id,
+    #     word=translation_with_usages.word,
+    #     translation=translation_with_usages.translation,
+    #     reading= translation_with_usages.reading,
+    #     script=translation_with_usages.script,
+    #     usages=new_usages
+    # )    
+    # return translation_response
+    #return TranslationResponse.model_validate(translation)
+    # ────────────────────────────────────────────────
+    # 3. MANUAL construction — avoids any schema confusion
+    usages_list = []
+    for usage in translation.usages:
+        print("THIS IS USAGE", usage.__dict__)
+        usages_list.append(
+            Usage(
+                id=usage.id,
+                en=usage.en,
+                ja=usage.ja,
+                usage_audio=None
+            )
+        )
 
-    return TranslationResponseWithoutUsageAudio.model_validate(translation_with_usages)
+    response = TranslationResponse(
+        id=translation.id,
+        word=translation.word,
+        translation=translation.translation,
+        reading=translation.reading,
+        script=translation.script,
+        usages=usages_list,
+    )
+    return response
+    #return TranslationResponseWithoutUsageAudio.model_validate(translation_with_usages)
 
 
 
