@@ -198,34 +198,34 @@ async def get_audio_for_usage_phrases(translation_id_and_voice : InputTranslatio
                 continue
 
             #Generate the audio file
-            # BASE_DIR = Path(__file__).resolve().parent
-            # audio_dir = BASE_DIR / "audio"
-            # audio_dir.mkdir(exist_ok=True)
-            # audio_filename = str(uuid.uuid4()) + ".mp3"
-            # audio_path = audio_dir / audio_filename
+            BASE_DIR = Path(__file__).resolve().parent
+            audio_dir = BASE_DIR / "audio"
+            audio_dir.mkdir(exist_ok=True)
+            audio_filename = str(uuid.uuid4()) + ".mp3"
+            audio_path = audio_dir / audio_filename
 
             voice_id_to_send = translation_id_and_voice.voice_id if translation_id_and_voice.voice_id else "EXAVITQu4vr4xnSDxMaL"
             print("THE VOICE ID IS", voice_id_to_send)
 
-            # try:
-            #     audio_file_path = await get_audio_from_eleven_labs(translation['reading'],audio_path,voice_id)
-            # except ElevenLabsAPIError as elae:
-            #     print("ELAE", elae)
-            #     if elae.status_code == 404:
-            #         raise HTTPException(status_code=404, detail=f"A voice with the voice id ${voice_id} was not found.")
-            #     else:
-            #         raise HTTPException(status_code=400, detail="An error occurred generating the audio.")
-            # except Exception as e:
-            #     raise HTTPException(status_code=400, detail="An error occurred generating the audio.")
+            try:
+                audio_file_path = await get_audio_from_eleven_labs(usage.ja,audio_path,voice_id_to_send)
+            except ElevenLabsAPIError as elae:
+                print("ELAE", elae)
+                if elae.status_code == 404:
+                    raise HTTPException(status_code=404, detail=f"A voice with the voice id ${voice_id_to_send} was not found.")
+                else:
+                    raise HTTPException(status_code=400, detail="An error occurred generating the audio.")
+            except Exception as e:
+                raise HTTPException(status_code=400, detail="An error occurred generating the audio.")
 
             #Upload the audio file to S3 storage
-            # with open(audio_file_path, "rb") as f:
-            #     #Get the file data required for transferring to S3
-            #     audio_data = f.read()
-            # storage_url = await upload_to_s3(audio_data,audio_filename)
-            # print("UPLOADED FILE ", storage_url)
+            with open(audio_file_path, "rb") as f:
+                #Get the file data required for transferring to S3
+                audio_data = f.read()
+            storage_url = await upload_to_s3(audio_data,audio_filename)
+            print("UPLOADED FILE ", storage_url)
 
-            link = await add_usage_audio(session,usage_id,"JUNK-STORAGE-URL",voice_id_to_send)
+            link = await add_usage_audio(session,usage_id,storage_url,voice_id_to_send)
             #link_obj = LinkResponse.model_validate(link)
             print("ADDED STORAGE LINK TO DB", link.__dict__)
             usages_list.append(LinkResponse.model_validate({
